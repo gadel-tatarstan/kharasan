@@ -5,6 +5,7 @@ import {
   depthOfSeg,
   deriveStrip,
   setStripRunLength,
+  setStripSegWidth,
   stripBounds,
   stripPins,
   stripSidePins,
@@ -1159,8 +1160,14 @@ export function StripEditor({ project, update, onBack, onInfo, onRename }: Props
     update((p) => (p.strip ? { ...p, strip: res.strip } : p));
   };
 
-  const setWidth = (segId: string, mm: number) =>
-    patch((s) => ({ ...s, widths: { ...s.widths, [segId]: clampW(mm) } }));
+  const setWidth = (segId: string, mm: number) => {
+    const res = setStripSegWidth(strip, segId, mm);
+    if (!res.ok) {
+      setToast(res.reason);
+      return;
+    }
+    update((p) => (p.strip ? { ...p, strip: res.strip } : p));
+  };
 
   const draw = (ctx: CanvasRenderingContext2D, v: View) => {
     drawGrid(ctx, v);
@@ -1618,8 +1625,9 @@ export function StripEditor({ project, update, onBack, onInfo, onRename }: Props
               свои размеры. Прямая стена, разбитая перегородками, сохраняет один общий размер с той
               стороны, где её ничто не перерезает. Введённое число <b>закрепляется</b> (зелёное);
               свободные участки подстраиваются, углы остаются прямыми. <b>Долгое нажатие</b> на
-              число закрепляет или освобождает эту сторону. Тап по ленте открывает ширину участка,
-              тап по вершине — её удаление.
+              число закрепляет или освобождает эту сторону. Тап по ленте открывает ширину участка:
+              закреплённая сторона остаётся на месте, а вторая берёт всё изменение. Тап по вершине —
+              её удаление.
             </p>
             <NumberField
               label="Ширина ленты по умолчанию"

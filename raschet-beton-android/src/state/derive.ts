@@ -1701,6 +1701,165 @@ export function toggleStripPin(strip: StripState, segId: string): StripState {
   return { ...strip, pinned: [...pinned] };
 }
 
+export const STRIP_MIN_WIDTH = 50;
+export const STRIP_MAX_WIDTH = 4000;
+
+const WIDTH_CONFLICT_REASON =
+  'Ширина не изменилась: закреплённая перпендикулярная сторона не может менять длину, ' +
+  'а свободной перпендикулярной стороны рядом нет. Открепите её долгим нажатием на число.';
+
+export type StripWidthResult =
+  | { ok: true; strip: StripState }
+  | { ok: false; reason: string };
+
+/**
+ * Changes the width of one band segment.
+ *
+ * Neither edge held — both move evenly around the axis, as before. Both edges
+ * held — the same even move: there is no single side to prefer. Exactly one
+ * green edge — that edge stays where the hand put it, so the axis shifts by half
+ * the change and the free edge takes all of it.
+ *
+ * The axis moves perpendicular, which means the perpendicular segments around
+ * the segment change length. A held perpendicular piece keeps its length and the
+ * shift travels past it to a free piece on the same line. When nothing free is
+ * left in the way, the edit is refused instead of silently stretching a fixed
+ * wall.
+ */
+export function setStripSegWidth(
+  strip: StripState,
+  segId: string,
+  mm: number,
+): StripWidthResult {
+  const value = Math.min(STRIP_MAX_WIDTH, Math.max(STRIP_MIN_WIDTH, mm));
+  const next: StripState = { ...strip, widths: { ...strip.widths, [segId]: value } };
+  const base = strip.baseNodes;
+  const seg = strip.segs.find((s) => s.id === segId);
+  if (!base || !strip.entered || !seg) return { ok: true, strip: next };
+
+  const oldWidth = widthOfSeg(strip, seg);
+  const delta = value - oldWidth;
+  if (Math.abs(delta) < 1e-6) return { ok: true, strip: next };
+
+  const lens = stripLens(strip);
+  const nodes = scaledStripNodes(strip);
+  const eff = strip.segs.filter(
+    (s) => base.some((n) => n.id === s.a) && base.some((n) => n.id === s.b),
+  );
+  const depth = (s: NetSeg) => depthOfSeg(strip, s);
+  const oldBuilt = buildStrip(nodes, eff, (s) => widthOfSeg(strip, s), depth);
+  const sidePins = stripSidePins(strip);
+  const sides = new Set<1 | -1>();
+  for (const run of faceRuns(oldBuilt)) {
+    if (!run.ids.includes(segId) || !sidePins.has(run.key)) continue;
+    const side = Number(run.key.split('|')[1]);
+    if (side === 1 || side === -1) sides.add(side);
+  }
+  // No green edge, or both of them: grow and shrink around the axis evenly.
+  if (sides.size !== 1) return { ok: true, strip: next };
+  const side = [...sides][0];
+
+  const edges = stripAxisEdges(base, strip.segs);
+  const own = edges.get(segId);
+  if (!own) return { ok: true, strip: next };
+  const perpAxis = own.axis === 'H' ? 'V' : 'H';
+  const work = { ...lens };
+  const locked = lockedStripSegments(strip);
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const allAt = new Map<string, string[]>();
+  const perpAt = new Map<string, string[]>();
+  for (const e of edges.values()) {
+    for (const id of [e.a, e.b]) {
+      const all = allAt.get(id);
+      if (all) all.push(e.id);
+      else allAt.set(id, [e.id]);
+      if (e.axis !== perpAxis) continue;
+      const perp = perpAt.get(id);
+      if (perp) perp.push(e.id);
+      else perpAt.set(id, [e.id]);
+    }
+  }
+
+  /**
+   * Moves one joint by `want` along the perpendicular, keeping held lengths.
+   * A free perpendicular piece right here takes the change; a held one passes
+   * the same move to its far joint, where the next piece gets its chance.
+   */
+  const seen = new Set<string>();
+  const absorb = (
+    nodeId: string,
+    want: number,
+    from: string | null,
+    left: number,
+  ): boolean => {
+    if (Math.abs(want) < 0.5) return true;
+    if (left <= 0) return false;
+    const node = byId.get(nodeId);
+    if (!node) return false;
+    const at = allAt.get(nodeId) ?? [];
+    // A wall of the same run tied to this joint would be dragged out of line.
+    for (const id of at) {
+      if (id === from || id === segId) continue;
+      const e = edges.get(id);
+      if (e && e.axis === own.axis) return false;
+    }
+    const incident = at.filter((id) => id !== from && edges.get(id)?.axis === perpAxis);
+    // Nothing perpendicular here: blending into a cap or the segment's own end.
+    if (!incident.length) return true;
+    const key = `${nodeId}|${want.toFixed(2)}|${from ?? '-'}`;
+    if (seen.has(key)) return true;
+    seen.add(key);
+
+    for (const id of incident) {
+      const e = edges.get(id);
+      if (!e) return false;
+      const otherId = e.a === nodeId ? e.b : e.a;
+      const other = byId.get(otherId);
+      if (!other) return false;
+      const dir = Math.sign(perpAxis === 'V' ? other.y - node.y : other.x - node.x) || 1;
+      if (locked.has(id)) {
+        if (!absorb(otherId, want, id, left - 1)) return false;
+      } else {
+        const len = (work[id] ?? 0) - want * dir;
+        if (len < STRIP_MIN_LEN - 0.5 || len > STRIP_MAX_LEN + 0.5) return false;
+        work[id] = Math.min(STRIP_MAX_LEN, Math.max(STRIP_MIN_LEN, len));
+      }
+    }
+    return true;
+  };
+
+  // A held edge stays, so the axis moves away from it by half of the change.
+  const shift = -(delta / 2) * side;
+  if (!absorb(seg.a, shift, null, 40) || !absorb(seg.b, shift, null, 40)) {
+    return { ok: false, reason: WIDTH_CONFLICT_REASON };
+  }
+
+  const rebuilt = stripNodesFromLens(base, strip.segs, work);
+  if (!rebuilt) return { ok: false, reason: WIDTH_CONFLICT_REASON };
+
+  // Anchor the held edge exactly where it was: the rebuilt shape is recentred,
+  // so the whole component is translated back by the difference of its face.
+  const axisOf = (list: NetNode[]) => {
+    const a = list.find((n) => n.id === seg.a);
+    const b = list.find((n) => n.id === seg.b);
+    if (!a || !b) return 0;
+    return own.axis === 'H' ? (a.y + b.y) / 2 : (a.x + b.x) / 2;
+  };
+  const demand =
+    axisOf(nodes) + (side * oldWidth) / 2 - (axisOf(rebuilt) + (side * value) / 2);
+  const comps = stripComponents(base, strip.segs);
+  const comp = comps.get(seg.a);
+  const baseNodes = base.map((n) => {
+    if (comp === undefined || comps.get(n.id) !== comp) return { ...n };
+    return own.axis === 'H' ? { ...n, y: n.y + demand } : { ...n, x: n.x + demand };
+  });
+  const anchored = stripNodesFromLens(baseNodes, strip.segs, work);
+  return {
+    ok: true,
+    strip: { ...next, lens: work, baseNodes, nodes: anchored ?? rebuilt },
+  };
+}
+
 export function scaledStripNodes(strip: StripState): NetNode[] {
   const base = strip.baseNodes;
   if (!base) return strip.nodes;

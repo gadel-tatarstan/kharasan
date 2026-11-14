@@ -85,5 +85,5 @@ Android-обёртка и все настройки сборки лежат в �
 SHA-256 файла `Beton-1.0.apk`:
 
 ```
-e610c5edf776e6fc402317f268cd6a324926a84168439df59dfb3fdebc91ffa6
+26e42b58bcbec5bbc5ec9ee0f59fd5abe31bc3e243072881276fb048a531e084
 ```

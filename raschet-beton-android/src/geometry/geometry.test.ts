@@ -27,6 +27,7 @@ import {
   slabPlacements,
   setStripRunLength,
   setStripSegLength,
+  setStripSegWidth,
   stripLens,
   stripNodesFromLens,
   stripPins,
@@ -1648,6 +1649,89 @@ describe('strip lengths', () => {
     expect(afterLeft.a.x - left.a.x).toBeCloseTo(-300, 3);
     expect(afterRight.a.x - right.a.x).toBeCloseTo(300, 3);
     expect((afterLeft.a.x + afterRight.a.x) / 2).toBeCloseTo((left.a.x + right.a.x) / 2, 3);
+  });
+
+  /** A ring that already has millimetre lengths entered, without moving the nodes. */
+  const enteredRing = (sidePins: string[] = [], pinned: string[] = []): StripState => ({
+    ...stripOf(square.nodes, square.segs),
+    lens: { t: 4000, r: 4000, u: 4000, l: 4000 },
+    entered: true,
+    sidePins,
+    pinned,
+  });
+
+  /** Y of one band edge of the bottom segment, side -1 is the outer (below) one. */
+  const faceY = (strip: StripState, side: 1 | -1) => {
+    const nodes = scaledStripNodes(strip);
+    const a = nodes.find((n) => n.id === 'a')!;
+    const b = nodes.find((n) => n.id === 'b')!;
+    const w = strip.widths.t ?? strip.baseWidth;
+    return (a.y + b.y) / 2 + (side * w) / 2;
+  };
+
+  it('keeps a held edge of the band when its width changes', () => {
+    const strip = enteredRing(['t|-1|0']);
+    expect(faceY(strip, -1)).toBeCloseTo(-200, 6);
+    const res = setStripSegWidth(strip, 't', 600);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    // The green bottom edge is a promise about position: it must not move.
+    expect(faceY(res.strip, -1)).toBeCloseTo(-200, 3);
+    // The free edge takes the whole change, so the perpendicular walls shorten
+    // by half of it and the opposite wall of the ring stays where it was.
+    const lens = stripLens(res.strip);
+    expect(lens.r).toBeCloseTo(3900, 6);
+    expect(lens.l).toBeCloseTo(3900, 6);
+    const top = scaledStripNodes(res.strip).find((n) => n.id === 'c')!;
+    expect(top.y).toBeCloseTo(4000, 3);
+  });
+
+  it('grows evenly when both edges of the segment are held', () => {
+    const strip = enteredRing(['t|-1|0', 't|1|0']);
+    const res = setStripSegWidth(strip, 't', 600);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    // Two green edges leave no preferred side, so the band grows around the axis.
+    const lens = stripLens(res.strip);
+    expect(lens.r).toBeCloseTo(4000, 6);
+    expect(lens.l).toBeCloseTo(4000, 6);
+  });
+
+  it('refuses a width change when every perpendicular piece is held', () => {
+    const strip = enteredRing(['t|-1|0', 'l|-1|0']);
+    const res = setStripSegWidth(strip, 't', 600);
+    expect(res.ok).toBe(false);
+  });
+
+  it('hands a width change to a free perpendicular piece past the held one', () => {
+    const nodes: NetNode[] = [
+      { id: 'a', x: 0, y: 0 },
+      { id: 'b', x: 4000, y: 0 },
+      { id: 'c', x: 4000, y: 4000 },
+      { id: 'd', x: 0, y: 4000 },
+      { id: 'm', x: 0, y: 2000 },
+    ];
+    const segs: NetSeg[] = [
+      { id: 't', a: 'a', b: 'b' },
+      { id: 'r', a: 'b', b: 'c' },
+      { id: 'u', a: 'c', b: 'd' },
+      { id: 'l1', a: 'd', b: 'm' },
+      { id: 'l2', a: 'm', b: 'a' },
+    ];
+    const strip: StripState = {
+      ...stripOf(nodes, segs),
+      lens: { t: 4000, r: 4000, u: 4000, l1: 2000, l2: 2000 },
+      entered: true,
+      sidePins: ['t|-1|0'],
+      pinned: ['l1'],
+    };
+    const res = setStripSegWidth(strip, 't', 600);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    const lens = stripLens(res.strip);
+    expect(lens.l1).toBeCloseTo(2000, 6);
+    expect(lens.l2).toBeCloseTo(1900, 6);
+    expect(lens.r).toBeCloseTo(3900, 6);
   });
 
   it('anchors a pinned wall when the opposite side has more pieces', () => {
