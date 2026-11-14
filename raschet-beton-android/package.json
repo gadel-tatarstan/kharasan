@@ -1,0 +1,31 @@
+{
+  "name": "beton-plan",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Офлайн-калькулятор объёма бетона для плит и лент с рисованием контура",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "icons": "node scripts/gen-icons.mjs",
+    "e2e": "node scripts/e2e-flow.mjs",
+    "e2e:gestures": "node scripts/e2e-gestures.mjs",
+    "e2e:labels": "node scripts/e2e-labels.mjs",
+    "e2e:all": "node scripts/e2e-flow.mjs && node scripts/e2e-editing.mjs && node scripts/e2e-lengths.mjs && node scripts/e2e-strip.mjs && node scripts/e2e-tabs.mjs && node scripts/e2e-holes.mjs && node scripts/e2e-mobile.mjs && node scripts/e2e-gestures.mjs && node scripts/e2e-labels.mjs && node scripts/e2e-offset-label.mjs && node scripts/e2e-tooth.mjs && node scripts/e2e-projects.mjs && node scripts/e2e-offline.mjs"
+  },
+  "dependencies": {
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "puppeteer-core": "^25.16.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
+  }
+}

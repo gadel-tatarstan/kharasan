@@ -1,0 +1,19 @@
+# Зависимости и результаты сборки
+**/node_modules/
+**/dist/
+
+# Секреты и ключи подписи
+.env
+*.keystore
+*.jks
+**/keystore.properties
+raschet-beton-android/android/local.properties
+
+# Android build
+raschet-beton-android/android/.gradle/
+raschet-beton-android/android/build/
+raschet-beton-android/android/app/build/
+raschet-beton-android/android/app/src/main/assets/public/
+
+# Бинарные артефакты
+*.apk
