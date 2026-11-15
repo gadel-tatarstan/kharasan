@@ -98,7 +98,7 @@ const draftPoints = () =>
     return 0;
   });
 const dismissToast = async () => {
-  await page.click('.toast').catch(() => {});
+  await page.click('.toast__close').catch(() => {});
   await sleep(400);
 };
 const rect = async (b, ax, ay, bx, by) => {
@@ -153,7 +153,7 @@ await tap(b.x + b.w * 0.5, b.y + b.h * 0.47);
 await sleep(500);
 console.log('crossing toast:', await text('.toast'), '| still drafting:', await text('.ed-head__subtitle'));
 await page.screenshot({ path: '/tmp/slab-draft.png' });
-await page.click('.toast').catch(() => {});
+await page.click('.toast__close').catch(() => {});
 await sleep(200);
 await btn('Не рисовать');
 await sleep(300);

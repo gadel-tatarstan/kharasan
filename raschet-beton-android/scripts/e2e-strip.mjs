@@ -430,7 +430,7 @@ if (!/Открепите/.test(conflictToast ?? '')) {
 if (JSON.stringify(locked) !== JSON.stringify(await vals())) {
   throw new Error('a refused edit must not move the plan');
 }
-await page.click('.toast').catch(() => {});
+await page.click('.toast__close').catch(() => {});
 await sleep(300);
 const pinsAfterConflict = await pinnedVals();
 console.log('pins after conflict:', pinsAfterConflict);

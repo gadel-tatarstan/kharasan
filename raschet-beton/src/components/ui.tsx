@@ -532,14 +532,29 @@ export function NameDialog({
 }
 
 export function Toast({ text, onDone }: { text: string; onDone: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  // Alerts stay until dismissed: a cross closes them, and a press anywhere
+  // outside does the same without stealing the press from the screen below.
   useEffect(() => {
-    const t = window.setTimeout(onDone, 4600);
-    return () => window.clearTimeout(t);
-  }, [text, onDone]);
+    const onPointerDown = (e: PointerEvent) => {
+      const el = ref.current;
+      if (el && e.target instanceof Node && el.contains(e.target)) return;
+      onDone();
+    };
+    document.addEventListener('pointerdown', onPointerDown, true);
+    return () => document.removeEventListener('pointerdown', onPointerDown, true);
+  }, [onDone]);
+
   return (
-    <div className="toast" role="alert" onClick={onDone} title="Нажмите, чтобы скрыть">
+    <div className="toast" role="alert" ref={ref}>
       <span className="toast__icon">!</span>
-      <span>{text}</span>
+      <span className="toast__text">{text}</span>
+      <button type="button" className="toast__close" aria-label="Закрыть сообщение" onClick={onDone}>
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden>
+          <path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        </svg>
+      </button>
     </div>
   );
 }

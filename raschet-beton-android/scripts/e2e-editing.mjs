@@ -95,7 +95,7 @@ await page.click('.chip:nth-of-type(3) .chip__btn'); await sleep(150);
 await page.keyboard.type('1500'); await page.keyboard.press('Enter'); await sleep(400);
 console.log('slab after pinned edit:', await vals(), await text('.hud'));
 // the edit is refused: dismiss the alert before touching the sheet
-await page.click('.toast').catch(() => {}); await sleep(250);
+await page.click('.toast__close').catch(() => {}); await sleep(250);
 await page.screenshot({ path: '/tmp/slab-ref.png' });
 const sheetTab = async (label) => { const hs = await page.$$('.sheet .segmented__item'); for (const h of hs) { const t = await h.evaluate((e) => e.textContent?.trim()); if (t === label) return h.click(); } throw new Error('no tab ' + label); };
 await sheetTab('Толщина'); await sleep(400);

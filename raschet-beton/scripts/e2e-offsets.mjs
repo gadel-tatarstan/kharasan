@@ -148,7 +148,7 @@ console.log('toast:', await text('.toast'));
 console.log('rows after 9000:', JSON.stringify(await fields()));
 
 // survives a reload
-await page.click('.toast').catch(() => {});
+await page.click('.toast__close').catch(() => {});
 await page.keyboard.press('Escape').catch(() => {});
 await page.goto(URL, { waitUntil: 'networkidle0' });
 await sleep(500);

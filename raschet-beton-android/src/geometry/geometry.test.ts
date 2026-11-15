@@ -1759,6 +1759,39 @@ describe('strip lengths', () => {
     expect(res.ok).toBe(false);
   });
 
+  it('explains a width change blocked by a T-junction continuation', () => {
+    // The selected top piece ends at a T-junction where the same band carries
+    // on to the right. The axis would have to shift up, but the shared joint
+    // cannot move without dragging that continuation out of line.
+    const nodes: NetNode[] = [
+      { id: 'a', x: 0, y: 0 },
+      { id: 'b', x: 6000, y: 0 },
+      { id: 'c', x: 6000, y: 4000 },
+      { id: 'd', x: 0, y: 4000 },
+      { id: 'e', x: 10000, y: 0 },
+    ];
+    const segs: NetSeg[] = [
+      { id: 't1', a: 'a', b: 'b' },
+      { id: 'r', a: 'b', b: 'c' },
+      { id: 'u', a: 'c', b: 'd' },
+      { id: 'l', a: 'd', b: 'a' },
+      { id: 't2', a: 'b', b: 'e' },
+    ];
+    const strip: StripState = {
+      ...stripOf(nodes, segs),
+      lens: { t1: 6000, r: 4000, u: 6000, l: 4000, t2: 4000 },
+      entered: true,
+      sidePins: ['t1|1|0'],
+    };
+    const res = setStripSegWidth(strip, 't1', 600);
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.reason).toMatch(/T-стык/);
+    expect(res.reason).toMatch(/продолжается в том же направлении/);
+    // This is not the generic pinned-perpendicular conflict.
+    expect(res.reason).not.toMatch(/перпендикулярная сторона/);
+  });
+
   it('hands a width change to a free perpendicular piece past the held one', () => {
     const nodes: NetNode[] = [
       { id: 'a', x: 0, y: 0 },

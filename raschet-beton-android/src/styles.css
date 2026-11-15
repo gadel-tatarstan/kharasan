@@ -1338,6 +1338,32 @@ input {
   margin-top: 1px;
 }
 
+.toast__text {
+  flex: 1;
+  min-width: 0;
+}
+
+.toast__close {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  margin: -7px -7px -7px 0;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: inherit;
+  opacity: 0.7;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.toast__close:active {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.1);
+}
+
 @keyframes toastIn {
   from {
     transform: translateY(10px);

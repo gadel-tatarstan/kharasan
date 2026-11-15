@@ -1708,6 +1708,13 @@ const WIDTH_CONFLICT_REASON =
   'Ширина не изменилась: закреплённая перпендикулярная сторона не может менять длину, ' +
   'а свободной перпендикулярной стороны рядом нет. Открепите её долгим нажатием на число.';
 
+const WIDTH_T_JUNCTION_REASON =
+  'Ширина не изменилась: в торце участка лента продолжается в том же направлении. ' +
+  'Чтобы зелёная грань осталась на месте, ось должна сдвинуться вбок, но тогда T-стык ' +
+  'потянет за собой продолжение ленты, а сдвинуть его отдельно нельзя. ' +
+  'Открепите зелёную грань — ширина вырастет в обе стороны от оси, — или задайте ширину ' +
+  'всей ленте кнопкой «Всем».';
+
 export type StripWidthResult =
   | { ok: true; strip: StripState }
   | { ok: false; reason: string };
@@ -1795,9 +1802,10 @@ export function setStripSegWidth(
   const attempt = (
     shifts: [number, number],
     yieldFacePins: boolean,
-  ): Record<string, number> | null => {
+  ): { ok: true; work: Record<string, number> } | { ok: false; collinear: boolean } => {
     const work = { ...lens };
     const seen = new Set<string>();
+    let collinearAtEnd = false;
     const absorb = (
       nodeId: string,
       want: number,
@@ -1813,7 +1821,13 @@ export function setStripSegWidth(
       for (const id of at) {
         if (id === from || id === segId) continue;
         const e = edges.get(id);
-        if (e && e.axis === own.axis) return false;
+        if (e && e.axis === own.axis) {
+          // The selected segment ends in a T-junction where the band continues
+          // in the same direction. Only report this for the segment's own ends;
+          // deeper recursion is a different constraint.
+          if (from === null) collinearAtEnd = true;
+          return false;
+        }
       }
       const incident = at.filter((id) => id !== from && edges.get(id)?.axis === perpAxis);
       // Nothing perpendicular here: blending into a cap or the segment's own end.
@@ -1840,9 +1854,9 @@ export function setStripSegWidth(
       }
       return true;
     };
-    if (!absorb(seg.a, shifts[0], null, 40)) return null;
-    if (!absorb(seg.b, shifts[1], null, 40)) return null;
-    return work;
+    if (!absorb(seg.a, shifts[0], null, 40)) return { ok: false, collinear: collinearAtEnd };
+    if (!absorb(seg.b, shifts[1], null, 40)) return { ok: false, collinear: collinearAtEnd };
+    return { ok: true, work };
   };
 
   const widthAfter = (s: NetSeg) => (s.id === segId ? value : widthOfSeg(strip, s));
@@ -1879,16 +1893,25 @@ export function setStripSegWidth(
   ];
   let work: Record<string, number> | null = null;
   let rebuilt: NetNode[] | null = null;
+  let blockedByTJunction = false;
   for (const variant of variants) {
     const candidate = attempt(variant.shifts, variant.yieldFacePins);
-    if (!candidate) continue;
-    const built = accept(candidate);
+    if (!candidate.ok) {
+      if (candidate.collinear) blockedByTJunction = true;
+      continue;
+    }
+    const built = accept(candidate.work);
     if (!built) continue;
-    work = candidate;
+    work = candidate.work;
     rebuilt = built;
     break;
   }
-  if (!work || !rebuilt) return { ok: false, reason: WIDTH_CONFLICT_REASON };
+  if (!work || !rebuilt) {
+    return {
+      ok: false,
+      reason: blockedByTJunction ? WIDTH_T_JUNCTION_REASON : WIDTH_CONFLICT_REASON,
+    };
+  }
 
   // Anchor the held edge exactly where it was: the rebuilt shape is recentred,
   // so the whole component is translated back by the difference of its face.
