@@ -1686,6 +1686,39 @@ describe('strip lengths', () => {
     expect(top.y).toBeCloseTo(4000, 3);
   });
 
+  it('grows to the free side when the perpendicular face is held too', () => {
+    const base = enteredRing();
+    const built = buildStrip(scaledStripNodes(base), base.segs, () => 400, () => 500);
+    const runs = faceRuns(built);
+    // Right wall of the ring, inner (left) face and top wall, inner (lower) face.
+    const right = runs.find(
+      (r) => r.ids.length === 1 && r.ids[0] === 'r' && r.axis === 'V' && (r.a.x + r.b.x) / 2 < 4000,
+    );
+    const top = runs.find(
+      (r) => r.ids.length === 1 && r.ids[0] === 't' && r.axis === 'H' && (r.a.y + r.b.y) / 2 > 0,
+    );
+    if (!right || !top) throw new Error('faces not found');
+    const strip: StripState = { ...base, sidePins: [right.key, top.key] };
+    const rightX = (right.a.x + right.b.x) / 2;
+    const res = setStripSegWidth(strip, 'r', 600);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    // The band only grows to the free (outer) side. Both horizontal walls take
+    // the shift on their centrelines, so their green inner faces stay put.
+    const lens = stripLens(res.strip);
+    expect(lens.r).toBeCloseTo(4000, 6);
+    expect(lens.t).toBeCloseTo(4100, 6);
+    expect(lens.u).toBeCloseTo(4100, 6);
+    const afterRuns = faceRuns(
+      buildStrip(scaledStripNodes(res.strip), res.strip.segs, (s) => (s.id === 'r' ? 600 : 400), () => 500),
+    );
+    const afterRight = afterRuns.find((r) => r.key === right.key);
+    const afterTop = afterRuns.find((r) => r.key === top.key);
+    expect(afterRight?.len).toBeCloseTo(right.len, 3);
+    expect(afterTop?.len).toBeCloseTo(top.len, 3);
+    expect(afterRight ? (afterRight.a.x + afterRight.b.x) / 2 : NaN).toBeCloseTo(rightX, 3);
+  });
+
   it('grows evenly when both edges of the segment are held', () => {
     const strip = enteredRing(['t|-1|0', 't|1|0']);
     const res = setStripSegWidth(strip, 't', 600);
@@ -1697,8 +1730,31 @@ describe('strip lengths', () => {
     expect(lens.l).toBeCloseTo(4000, 6);
   });
 
-  it('refuses a width change when every perpendicular piece is held', () => {
+  it('allows a width change when the perpendicular green face keeps its length', () => {
     const strip = enteredRing(['t|-1|0', 'l|-1|0']);
+    const keys = ['t|-1|0', 'l|-1|0'];
+    const before = new Map(
+      faceRuns(buildStrip(scaledStripNodes(strip), strip.segs, () => 400, () => 500)).map(
+        (r) => [r.key, r.len] as const,
+      ),
+    );
+    const res = setStripSegWidth(strip, 't', 600);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    const after = new Map(
+      faceRuns(
+        buildStrip(scaledStripNodes(res.strip), res.strip.segs, (s) => (s.id === 't' ? 600 : 400), () => 500),
+      ).map((r) => [r.key, r.len] as const),
+    );
+    // The left wall's centreline gives a little, but the mitre at the corner
+    // grows by exactly the same half-width: its visible green face is unchanged.
+    for (const key of keys) expect(after.get(key)).toBeCloseTo(before.get(key) ?? 0, 3);
+  });
+
+  it('still refuses when the perpendicular green face would change length', () => {
+    // The left wall's inner face sits on the side the band grows into, so the
+    // mitre pushes it longer. There is no free parallel left to take that.
+    const strip = enteredRing(['t|-1|0', 'l|1|0']);
     const res = setStripSegWidth(strip, 't', 600);
     expect(res.ok).toBe(false);
   });

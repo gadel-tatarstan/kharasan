@@ -1763,79 +1763,132 @@ export function setStripSegWidth(
   const own = edges.get(segId);
   if (!own) return { ok: true, strip: next };
   const perpAxis = own.axis === 'H' ? 'V' : 'H';
-  const work = { ...lens };
   const locked = lockedStripSegments(strip);
+  const pins = stripPins(strip);
+  const facePinned = new Set<string>();
+  for (const key of strip.sidePins ?? []) {
+    for (const id of (key.split('|')[0] ?? '').split('+')) if (id) facePinned.add(id);
+  }
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const allAt = new Map<string, string[]>();
-  const perpAt = new Map<string, string[]>();
   for (const e of edges.values()) {
     for (const id of [e.a, e.b]) {
       const all = allAt.get(id);
       if (all) all.push(e.id);
       else allAt.set(id, [e.id]);
-      if (e.axis !== perpAxis) continue;
-      const perp = perpAt.get(id);
-      if (perp) perp.push(e.id);
-      else perpAt.set(id, [e.id]);
     }
   }
+
+  // A held edge stays, so the axis moves away from it by half of the change.
+  const shift = -(delta / 2) * side;
 
   /**
    * Moves one joint by `want` along the perpendicular, keeping held lengths.
    * A free perpendicular piece right here takes the change; a held one passes
    * the same move to its far joint, where the next piece gets its chance.
+   *
+   * A face-pinned piece may also give its centreline a little: the mitre at the
+   * shared corner grows by the same half-width, so the visible green face keeps
+   * its length while the centreline absorbs the shift. That is what lets the
+   * band grow to the free side when the perpendicular face is green too.
    */
-  const seen = new Set<string>();
-  const absorb = (
-    nodeId: string,
-    want: number,
-    from: string | null,
-    left: number,
-  ): boolean => {
-    if (Math.abs(want) < 0.5) return true;
-    if (left <= 0) return false;
-    const node = byId.get(nodeId);
-    if (!node) return false;
-    const at = allAt.get(nodeId) ?? [];
-    // A wall of the same run tied to this joint would be dragged out of line.
-    for (const id of at) {
-      if (id === from || id === segId) continue;
-      const e = edges.get(id);
-      if (e && e.axis === own.axis) return false;
-    }
-    const incident = at.filter((id) => id !== from && edges.get(id)?.axis === perpAxis);
-    // Nothing perpendicular here: blending into a cap or the segment's own end.
-    if (!incident.length) return true;
-    const key = `${nodeId}|${want.toFixed(2)}|${from ?? '-'}`;
-    if (seen.has(key)) return true;
-    seen.add(key);
-
-    for (const id of incident) {
-      const e = edges.get(id);
-      if (!e) return false;
-      const otherId = e.a === nodeId ? e.b : e.a;
-      const other = byId.get(otherId);
-      if (!other) return false;
-      const dir = Math.sign(perpAxis === 'V' ? other.y - node.y : other.x - node.x) || 1;
-      if (locked.has(id)) {
-        if (!absorb(otherId, want, id, left - 1)) return false;
-      } else {
-        const len = (work[id] ?? 0) - want * dir;
-        if (len < STRIP_MIN_LEN - 0.5 || len > STRIP_MAX_LEN + 0.5) return false;
-        work[id] = Math.min(STRIP_MAX_LEN, Math.max(STRIP_MIN_LEN, len));
+  const attempt = (
+    shifts: [number, number],
+    yieldFacePins: boolean,
+  ): Record<string, number> | null => {
+    const work = { ...lens };
+    const seen = new Set<string>();
+    const absorb = (
+      nodeId: string,
+      want: number,
+      from: string | null,
+      left: number,
+    ): boolean => {
+      if (Math.abs(want) < 0.5) return true;
+      if (left <= 0) return false;
+      const node = byId.get(nodeId);
+      if (!node) return false;
+      const at = allAt.get(nodeId) ?? [];
+      // A wall of the same run tied to this joint would be dragged out of line.
+      for (const id of at) {
+        if (id === from || id === segId) continue;
+        const e = edges.get(id);
+        if (e && e.axis === own.axis) return false;
       }
-    }
-    return true;
+      const incident = at.filter((id) => id !== from && edges.get(id)?.axis === perpAxis);
+      // Nothing perpendicular here: blending into a cap or the segment's own end.
+      if (!incident.length) return true;
+      const key = `${nodeId}|${want.toFixed(2)}|${from ?? '-'}`;
+      if (seen.has(key)) return true;
+      seen.add(key);
+
+      for (const id of incident) {
+        const e = edges.get(id);
+        if (!e) return false;
+        const otherId = e.a === nodeId ? e.b : e.a;
+        const other = byId.get(otherId);
+        if (!other) return false;
+        const dir = Math.sign(perpAxis === 'V' ? other.y - node.y : other.x - node.x) || 1;
+        const canYield = yieldFacePins && facePinned.has(id) && !pins.has(id);
+        if (locked.has(id) && !canYield) {
+          if (!absorb(otherId, want, id, left - 1)) return false;
+        } else {
+          const len = (work[id] ?? 0) - want * dir;
+          if (len < STRIP_MIN_LEN - 0.5 || len > STRIP_MAX_LEN + 0.5) return false;
+          work[id] = Math.min(STRIP_MAX_LEN, Math.max(STRIP_MIN_LEN, len));
+        }
+      }
+      return true;
+    };
+    if (!absorb(seg.a, shifts[0], null, 40)) return null;
+    if (!absorb(seg.b, shifts[1], null, 40)) return null;
+    return work;
   };
 
-  // A held edge stays, so the axis moves away from it by half of the change.
-  const shift = -(delta / 2) * side;
-  if (!absorb(seg.a, shift, null, 40) || !absorb(seg.b, shift, null, 40)) {
-    return { ok: false, reason: WIDTH_CONFLICT_REASON };
-  }
+  const widthAfter = (s: NetSeg) => (s.id === segId ? value : widthOfSeg(strip, s));
+  const lockedFaces = new Map(
+    faceRuns(oldBuilt)
+      .filter((r) => sidePins.has(r.key))
+      .map((r) => [r.key, r.len] as const),
+  );
 
-  const rebuilt = stripNodesFromLens(base, strip.segs, work);
-  if (!rebuilt) return { ok: false, reason: WIDTH_CONFLICT_REASON };
+  /** A candidate is only valid if every green face keeps its visible length. */
+  const accept = (work: Record<string, number>): NetNode[] | null => {
+    const rebuilt = stripNodesFromLens(base, strip.segs, work);
+    if (!rebuilt) return null;
+    const after = new Map(
+      faceRuns(buildStrip(rebuilt, eff, widthAfter, depth)).map((r) => [r.key, r.len] as const),
+    );
+    for (const [key, len] of lockedFaces) {
+      const now = after.get(key);
+      if (now === undefined || Math.abs(now - len) > 0.5) return null;
+    }
+    if (validateTopology(rebuilt, strip.segs)) return null;
+    return rebuilt;
+  };
+
+  // Try the even move first. If one end cannot absorb it, the other end takes
+  // the whole change — that is the "grow to the free side" case. Face-pinned
+  // perpendicular pieces may yield their centreline, but only when the green
+  // face itself still measures the same after the rebuild.
+  const variants: { shifts: [number, number]; yieldFacePins: boolean }[] = [
+    { shifts: [shift, shift], yieldFacePins: false },
+    { shifts: [shift, shift], yieldFacePins: true },
+    { shifts: [shift * 2, 0], yieldFacePins: true },
+    { shifts: [0, shift * 2], yieldFacePins: true },
+  ];
+  let work: Record<string, number> | null = null;
+  let rebuilt: NetNode[] | null = null;
+  for (const variant of variants) {
+    const candidate = attempt(variant.shifts, variant.yieldFacePins);
+    if (!candidate) continue;
+    const built = accept(candidate);
+    if (!built) continue;
+    work = candidate;
+    rebuilt = built;
+    break;
+  }
+  if (!work || !rebuilt) return { ok: false, reason: WIDTH_CONFLICT_REASON };
 
   // Anchor the held edge exactly where it was: the rebuilt shape is recentred,
   // so the whole component is translated back by the difference of its face.
