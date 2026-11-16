@@ -1900,4 +1900,108 @@ describe('strip lengths', () => {
     const withPin: StripState = { ...stripOf(square.nodes, square.segs), sidePins: ['t+r|-1|0'] };
     expect([...lockedStripSegments(withPin)].sort()).toEqual(['r', 't']);
   });
+
+  // Two rectangular voids sitting on one long bottom band. The outer bottom
+  // face is a single run across both rings, so each ring has its own free top
+  // side to take a share of the edit.
+  const twoLoops = {
+    nodes: [
+      { id: 'a', x: 0, y: 0 },
+      { id: 'b', x: 3000, y: 0 },
+      { id: 'c', x: 6000, y: 0 },
+      { id: 'd', x: 9000, y: 0 },
+      { id: 'a2', x: 0, y: -3000 },
+      { id: 'b2', x: 3000, y: -3000 },
+      { id: 'c2', x: 6000, y: -3000 },
+      { id: 'd2', x: 9000, y: -3000 },
+    ],
+    segs: [
+      { id: 'u1', a: 'a', b: 'b' },
+      { id: 'u2', a: 'b', b: 'c' },
+      { id: 'u3', a: 'c', b: 'd' },
+      { id: 'r1', a: 'b', b: 'b2' },
+      { id: 't1', a: 'b2', b: 'a2' },
+      { id: 'l1', a: 'a2', b: 'a' },
+      { id: 'l2', a: 'c', b: 'c2' },
+      { id: 't2', a: 'c2', b: 'd2' },
+      { id: 'r2', a: 'd2', b: 'd' },
+    ] as NetSeg[],
+  };
+  const enteredLoops = (sidePins: string[] = []): StripState => ({
+    ...stripOf(twoLoops.nodes, twoLoops.segs),
+    lens: {
+      u1: 3000,
+      u2: 3000,
+      u3: 3000,
+      r1: 3000,
+      t1: 3000,
+      l1: 3000,
+      l2: 3000,
+      t2: 3000,
+      r2: 3000,
+    },
+    entered: true,
+    sidePins,
+  });
+  const loopsRuns = (strip: StripState) =>
+    faceRuns(buildStrip(scaledStripNodes(strip), strip.segs, () => 400, () => 500));
+  const loopsBottom = (strip: StripState) => {
+    const run = loopsRuns(strip).find(
+      (r) => r.outer && r.axis === 'H' && (r.a.y + r.b.y) / 2 > 0,
+    );
+    if (!run) throw new Error('bottom face not found');
+    return run;
+  };
+
+  it('grows a face run that spans separate rings', () => {
+    const strip = enteredLoops();
+    const run = loopsBottom(strip);
+    expect(run.ids).toEqual(['u1', 'u2', 'u3']);
+    const res = setStripRunLength(strip, run, 10000);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    const lens = stripLens(res.strip);
+    // Both rings take their own share: every free top side grows with its bottom.
+    expect(lens.u1).toBeCloseTo(3200, 6);
+    expect(lens.u2).toBeCloseTo(3200, 6);
+    expect(lens.u3).toBeCloseTo(3200, 6);
+    expect(lens.t1).toBeCloseTo(3200, 6);
+    expect(lens.t2).toBeCloseTo(3200, 6);
+    expect(stripNodesFromLens(res.strip.baseNodes!, res.strip.segs, lens)).not.toBeNull();
+    expect(loopsBottom(res.strip).len).toBeCloseTo(10000, 6);
+  });
+
+  it('keeps a green parallel face and moves only the free pieces of the run', () => {
+    const green = loopsRuns(enteredLoops()).find(
+      (r) => !r.outer && r.axis === 'H' && r.ids.join('+') === 'u1',
+    );
+    if (!green) throw new Error('green face not found');
+    const strip = enteredLoops([green.key]);
+    const res = setStripRunLength(strip, loopsBottom(strip), 10000);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    const lens = stripLens(res.strip);
+    // A green face on one piece of the run is a promise: that piece stays.
+    expect(lens.u1).toBeCloseTo(3000, 6);
+    expect(lens.t1).toBeCloseTo(3000, 6);
+    // The free pieces and the far ring carry the change instead.
+    expect(lens.u2).toBeCloseTo(3300, 6);
+    expect(lens.u3).toBeCloseTo(3300, 6);
+    expect(lens.t2).toBeCloseTo(3300, 6);
+    const after = loopsRuns(res.strip).find((r) => r.key === green.key);
+    expect(after?.len).toBeCloseTo(green.len, 3);
+    expect(loopsBottom(res.strip).len).toBeCloseTo(10000, 3);
+  });
+
+  it('still alerts when every parallel side of a multi-ring run is held', () => {
+    const all = loopsRuns(enteredLoops());
+    const greenU1 = all.find((r) => r.axis === 'H' && r.ids.join('+') === 'u1');
+    const greenT2 = all.find((r) => r.axis === 'H' && r.ids.join('+') === 't2');
+    if (!greenU1 || !greenT2) throw new Error('faces not found');
+    const strip = enteredLoops([greenU1.key, greenT2.key]);
+    const res = setStripRunLength(strip, loopsBottom(strip), 10000);
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.reason).toMatch(/Открепите/);
+  });
 });

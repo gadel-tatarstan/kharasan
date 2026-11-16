@@ -198,7 +198,7 @@ export function EditorHeader({
   onRename,
 }: {
   title: string;
-  subtitle: string;
+  subtitle?: string;
   onBack: () => void;
   onInfo: () => void;
   /** Tapping the name opens the rename dialog; the pencil is the affordance. */
@@ -221,7 +221,7 @@ export function EditorHeader({
           </svg>
         )}
       </span>
-      <span className="ed-head__subtitle">{subtitle}</span>
+      {subtitle && <span className="ed-head__subtitle">{subtitle}</span>}
     </>
   );
   return (

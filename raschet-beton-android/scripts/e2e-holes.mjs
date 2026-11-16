@@ -155,7 +155,7 @@ console.log('crossing toast:', await text('.toast'), '| still drafting:', await 
 await page.screenshot({ path: '/tmp/slab-draft.png' });
 await page.click('.toast__close').catch(() => {});
 await sleep(200);
-await btn('Не рисовать');
+await btn('Сбросить');
 await sleep(300);
 console.log('after cancel chips:', await count('.chip'), '(was', before, ')');
 
@@ -239,7 +239,7 @@ await tap(b.x + ob.x0 - 22, midY + (ob.y1 - ob.y0) * 0.3);
 if ((await draftPoints()) !== 2) {
   throw new Error('a point outside the slab was refused');
 }
-await btn('Не рисовать');
+await btn('Сбросить');
 await sleep(350);
 
 // the same from the inside: drawing that started in the slab must stay there
@@ -272,7 +272,7 @@ await tap(cx, cy + (ob.y1 - ob.y0) * 0.2);
 if ((await draftPoints()) !== 2) {
   throw new Error('a point inside the slab was refused');
 }
-await btn('Не рисовать');
+await btn('Сбросить');
 await sleep(350);
 await page.screenshot({ path: '/tmp/slab-early-cross.png' });
 

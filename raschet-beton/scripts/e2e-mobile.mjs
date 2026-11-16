@@ -106,17 +106,16 @@ console.log('draft buttons  :', draftButtons);
 if (draftButtons.includes('Замкнуть контур')) {
   throw new Error('the old close button is still in the draft sheet');
 }
-if (!(await text('.ed-head__subtitle'))?.endsWith('новый контур')) {
+if (!draftButtons.includes('Сбросить')) {
   throw new Error('draft did not start');
 }
 
 // Tapping the first point after three corners completes the rectangle.
 await tap(points[0][0], points[0][1]);
 await sleep(500);
-const closed = await text('.ed-head__subtitle');
 const chips = await count('.chip');
-console.log('three corners  :', closed, '| chips:', chips);
-if (!closed?.endsWith('размеры сторон') || chips !== 4) {
+console.log('three corners  : chips:', chips);
+if (chips !== 4) {
   throw new Error('three-point contour did not close with a calculated fourth corner');
 }
 
@@ -136,9 +135,9 @@ await page.screenshot({ path: '/tmp/opencode/mobile-confirm.png' });
 const yes = (await page.$$('.confirm .btn'))[1];
 await yes.click();
 await sleep(450);
-const after = { subtitle: await text('.ed-head__subtitle'), chips: await count('.chip'), dialog: await count('.confirm') };
+const after = { chips: await count('.chip'), dialog: await count('.confirm') };
 console.log('after confirm  :', after);
-if (!after.subtitle?.endsWith('рисование контура') || after.chips !== 0 || after.dialog !== 0) {
+if (after.chips !== 0 || after.dialog !== 0) {
   throw new Error('clearing the slab did not reset it: ' + JSON.stringify(after));
 }
 

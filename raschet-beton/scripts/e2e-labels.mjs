@@ -119,7 +119,7 @@ await tap(box.x + 100, box.y + 200);
 await sleep(450);
 await clickBtn('К размерам');
 await sleep(450);
-if (!(await subtitle())?.endsWith('размеры сторон и ширина')) throw new Error('strip ring was not created');
+if ((await count('.chip')) === 0) throw new Error('strip ring was not created');
 const start = await inspect('fit');
 if (start.count !== 8) throw new Error(`expected 8 labels at fit zoom, got ${start.count}`);
 

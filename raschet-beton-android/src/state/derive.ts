@@ -1050,9 +1050,25 @@ export function stripSidePins(strip: StripState): Set<string> {
 export function lockedStripSegments(strip: StripState): Set<string> {
   const locked = stripPins(strip);
   for (const key of strip.sidePins ?? []) {
-    const ids = key.split('|')[0];
-    if (!ids) continue;
-    for (const id of ids.split('+')) if (id) locked.add(id);
+    if (!key) continue;
+    for (const id of key.split('|')[0]?.split('+') ?? []) if (id) locked.add(id);
+  }
+  return locked;
+}
+
+/**
+ * Locks that stay in force while one face is retyped.
+ *
+ * The edited face itself is released — that is how a green face gets a new
+ * number. Every *other* held face is still a promise: if it lies on the same
+ * band pieces, those pieces must keep their length, and the change has to find
+ * free pieces elsewhere in the run instead of quietly stretching the green one.
+ */
+function lockedStripSegmentsForFace(strip: StripState, faceKey: string): Set<string> {
+  const locked = stripPins(strip);
+  for (const key of strip.sidePins ?? []) {
+    if (!key || key === faceKey) continue;
+    for (const id of key.split('|')[0]?.split('+') ?? []) if (id) locked.add(id);
   }
   return locked;
 }
@@ -1365,13 +1381,21 @@ function solveStripLens(
   segs: NetSeg[],
   lens: Record<string, number>,
   pinned: Set<string>,
-  edited: string,
+  edited: readonly string[],
 ): StripSolve {
   const edges = stripAxisEdges(base, segs);
   const ids = new Set(base.map((n) => n.id));
   const cycles = findCycles(segs, ids);
   const work = { ...lens };
-  const editedEdge = edges.get(edited);
+  const editedIds = new Set(edited);
+  // A face run can span several segments, and each one may sit in its own ring.
+  // The opposite side of every edited sign is what a person expects to slide, so
+  // the preference is keyed by the set of directions being edited, not by one id.
+  const editedSigns = new Set<1 | -1>();
+  for (const id of edited) {
+    const e = edges.get(id);
+    if (e) editedSigns.add(e.sign);
+  }
 
   // Every cycle-axis pair is one constraint: the signed lengths must sum to zero.
   const rows: StripRow[] = [];
@@ -1386,7 +1410,7 @@ function solveStripLens(
         const forward = e.a === st.from && e.b === st.to;
         // The opposite side is what a person expects to slide; it gets a much
         // larger share of the change, the rest is spread over other parallels.
-        const p = editedEdge && e.sign !== editedEdge.sign ? 8 : 1;
+        const p = editedSigns.size && !editedSigns.has(e.sign) ? 8 : 1;
         list.push({ id: e.id, a: ((forward ? 1 : -1) * e.sign) as 1 | -1, p });
       }
       if (list.length) rows.push({ cycle, axis, edges: list });
@@ -1404,9 +1428,12 @@ function solveStripLens(
 
   // Only constraints touched by the edit take part, then everything reached
   // through the edges we move. An unrelated stale ring cannot block the change.
+  // A face run may cover several segments in different rings, so every edited
+  // piece opens its own constraint — otherwise the untouched rings would be
+  // left open and the edit would look impossible although their far sides are free.
   const active = new Set<number>();
   rows.forEach((row, i) => {
-    if (row.edges.some((e) => e.id === edited)) active.add(i);
+    if (row.edges.some((e) => editedIds.has(e.id))) active.add(i);
   });
 
   if (!active.size) {
@@ -1576,7 +1603,7 @@ export function setStripSegLength(
   // hand-held face are hard length constraints.
   const pinned = lockedStripSegments(strip);
   pinned.add(segId);
-  const solved = solveStripLens(strip.baseNodes, strip.segs, { ...lens, [segId]: value }, pinned, segId);
+  const solved = solveStripLens(strip.baseNodes, strip.segs, { ...lens, [segId]: value }, pinned, [segId]);
   if (!solved.ok) return solved;
   const anchored = anchorStripNodes(strip, lens, solved.lens, strip.sidePins ?? []);
   return {
@@ -1649,11 +1676,11 @@ export function setStripRunLength(
     };
   }
 
-  // Re-editing a fixed face is allowed: the run's own pieces are released for
-  // this one change while every other pin stays put. The opposite green side
-  // is a hard lock — if it leaves no free parallel segment, the edit is refused.
-  const locked = lockedStripSegments(strip);
-  for (const id of ids) locked.delete(id);
+  // Re-editing a fixed face is allowed: that face is released for this one
+  // change, but every other green face and hand-typed number stays put. If a
+  // green face lies on the same band pieces, those pieces keep their length and
+  // the change goes to the free pieces of the run.
+  const locked = lockedStripSegmentsForFace(strip, run.key);
   const movable = ids.filter((id) => !locked.has(id));
   if (!movable.length) return { ok: false, reason: CONFLICT_REASON };
   const next = { ...lens };
@@ -1665,7 +1692,7 @@ export function setStripRunLength(
     strip.segs,
     next,
     new Set([...locked, ...ids]),
-    ids[0],
+    ids,
   );
   if (!solved.ok) return solved;
   const sidePins = stripSidePins(strip);

@@ -212,7 +212,7 @@ if (secondShift < 15) throw new Error('pinch with a late finger on a chip did no
 if (editorsAfterSecond !== 0) throw new Error('a late finger on a chip opened the number editor');
 if (pinnedAfterSecond !== 0) throw new Error('a late finger on a chip toggled the pin during the pinch');
 
-if (!(await text('.ed-head__subtitle'))?.endsWith('размеры сторон')) {
+if ((await count('.chip')) === 0) {
   throw new Error('canvas gestures left the slab editor');
 }
 

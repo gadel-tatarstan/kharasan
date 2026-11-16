@@ -1439,15 +1439,6 @@ export function StripEditor({ project, update, onBack, onInfo, onRename }: Props
     return nodeArms.length > 2 ? 'пересечение' : 'отдельная точка';
   })();
 
-  const subtitle =
-    stage === 'outline'
-      ? 'рисование оси'
-      : drafting
-        ? 'добавление линии'
-        : mode === 'depth'
-          ? 'глубина по отрезкам'
-          : 'размеры сторон и ширина';
-
   const pickTab = (m: 'dims' | 'depth') => {
     setSelected(null);
     setSelectedRun(null);
@@ -1459,7 +1450,7 @@ export function StripEditor({ project, update, onBack, onInfo, onRename }: Props
 
   return (
     <div className="editor">
-      <EditorHeader title={project.name} subtitle={`Лента · ${subtitle}`} onBack={onBack} onInfo={onInfo} onRename={onRename} />
+      <EditorHeader title={project.name} onBack={onBack} onInfo={onInfo} onRename={onRename} />
       <div className="canvas-wrap">
         <PlanCanvas view={view} onView={setView} onSize={onSize} draw={draw} onTap={tapCanvas}>
           {chips}

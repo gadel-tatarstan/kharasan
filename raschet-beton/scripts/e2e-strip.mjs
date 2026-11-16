@@ -1063,7 +1063,7 @@ console.log('last delete    :', JSON.stringify({ state: emptyState, subtitle: aw
 if (!emptyState || emptyState.nodes !== 0 || emptyState.segs !== 0) {
   throw new Error('deleting the last segment must clear the network: ' + JSON.stringify(emptyState));
 }
-if (!/рисование/.test(await subtitle())) {
+if (!(await btnLabels()).includes('К размерам')) {
   throw new Error('deleting the last segment must return to the outline tab');
 }
 

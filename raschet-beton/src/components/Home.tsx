@@ -61,8 +61,6 @@ const dateLabel = (ts: number) => {
     d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
 };
 
-const kindLabel = (kind: 'slab' | 'strip') => (kind === 'slab' ? 'Плита' : 'Лента');
-
 const plural = (n: number, one: string, few: string, many: string) => {
   const mod10 = n % 10;
   const mod100 = n % 100;
@@ -130,10 +128,7 @@ export function Home({
             <KindIcon kind={p.kind} />
             <span className="card__text">
               <span className="card__title">{p.name}</span>
-              <span className="card__meta">
-                {kindLabel(p.kind)} · {dateLabel(p.updatedAt)}
-                {vol.ready ? '' : ' · не завершён'}
-              </span>
+              <span className="card__meta">{dateLabel(p.updatedAt)}</span>
             </span>
             <span className="card__vol">
               {vol.ready ? fmtM3(vol.mm3) : '—'}

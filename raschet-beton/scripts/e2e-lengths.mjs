@@ -87,7 +87,7 @@ await tap(box.x + 190, box.y + 470);
 await tap(box.x + 70, box.y + 470);
 await tap(box.x + 70, box.y + 150);
 await sleep(500);
-console.log('stage:', await page.$eval('.ed-head__subtitle', (e) => e.textContent));
+console.log('stage:', (await vals()).length, 'chips');
 
 // 1. first typed number pins only itself and fixes the mm scale
 await typeInto('.chip:nth-of-type(1) .chip__btn', 4000);

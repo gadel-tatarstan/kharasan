@@ -718,22 +718,9 @@ export function SlabEditor({ project, update, onBack, onInfo, onRename }: Props)
           { value: 'depth', label: 'Толщина' },
         ];
 
-  const subtitle =
-    activeMode === 'offset'
-      ? 'положение контуров'
-      : activeMode === 'depth'
-      ? 'толщина по вершинам'
-      : draft
-        ? 'новый контур'
-        : closedCount === 0
-          ? 'рисование контура'
-          : closedCount > 1
-            ? `контуров: ${closedCount}`
-            : 'размеры сторон';
-
   return (
     <div className="editor">
-      <EditorHeader title={project.name} subtitle={`Плита · ${subtitle}`} onBack={onBack} onInfo={onInfo} onRename={onRename} />
+      <EditorHeader title={project.name} onBack={onBack} onInfo={onInfo} onRename={onRename} />
       <div className="canvas-wrap">
         <PlanCanvas
           view={view}
@@ -794,10 +781,9 @@ export function SlabEditor({ project, update, onBack, onInfo, onRename }: Props)
             </div>
             <div className="row">
               <Btn variant="soft" onClick={cancelDraft}>
-                Не рисовать
+                Сбросить
               </Btn>
             </div>
-            <div className="sheet__meta">Точек: {draft.raw.length} · масштаб — двумя пальцами</div>
           </>
         )}
 
