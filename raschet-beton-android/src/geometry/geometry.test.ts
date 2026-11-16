@@ -1993,15 +1993,142 @@ describe('strip lengths', () => {
     expect(loopsBottom(res.strip).len).toBeCloseTo(10000, 3);
   });
 
-  it('still alerts when every parallel side of a multi-ring run is held', () => {
+  it('slides the free bridge between two rings instead of refusing', () => {
+    // The middle piece of the bottom run joins the two rings but lies in no
+    // ring itself, so it can stretch even when both green tops are held.
     const all = loopsRuns(enteredLoops());
     const greenU1 = all.find((r) => r.axis === 'H' && r.ids.join('+') === 'u1');
     const greenT2 = all.find((r) => r.axis === 'H' && r.ids.join('+') === 't2');
     if (!greenU1 || !greenT2) throw new Error('faces not found');
     const strip = enteredLoops([greenU1.key, greenT2.key]);
     const res = setStripRunLength(strip, loopsBottom(strip), 10000);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    const lens = stripLens(res.strip);
+    // Both held rings keep their width; the change moves the right ring over.
+    expect(lens.u1).toBeCloseTo(3000, 6);
+    expect(lens.t1).toBeCloseTo(3000, 6);
+    expect(lens.t2).toBeCloseTo(3000, 6);
+    expect(lens.u2).toBeCloseTo(3600, 6);
+    expect(lens.u3).toBeCloseTo(3000, 6);
+    expect(loopsBottom(res.strip).len).toBeCloseTo(10000, 3);
+  });
+
+  // The shape from the screenshot: a tall left ring and a shorter right ring
+  // share one wall, and the top outer face is one run across both. The green
+  // bottom belongs to the left ring only; the right ring stays free.
+  const twoRing = {
+    nodes: [
+      { id: 'a', x: 0, y: 0 },
+      { id: 'b', x: 9400, y: 0 },
+      { id: 'c', x: 18400, y: 0 },
+      { id: 'd', x: 18400, y: -4904 },
+      { id: 'e', x: 9400, y: -4904 },
+      { id: 'g', x: 9400, y: -9116 },
+      { id: 'f', x: 0, y: -9116 },
+    ] as NetNode[],
+    segs: [
+      { id: 't1', a: 'a', b: 'b' },
+      { id: 't2', a: 'b', b: 'c' },
+      { id: 'r2', a: 'c', b: 'd' },
+      { id: 'b2', a: 'd', b: 'e' },
+      { id: 'r1a', a: 'e', b: 'b' },
+      { id: 'b1', a: 'f', b: 'g' },
+      { id: 'r1b', a: 'g', b: 'e' },
+      { id: 'l1', a: 'f', b: 'a' },
+    ] as NetSeg[],
+  };
+  const enteredTwoRing = (sidePins: string[] = []): StripState => ({
+    ...stripOf(twoRing.nodes, twoRing.segs),
+    lens: {
+      t1: 9400,
+      t2: 9000,
+      r2: 4904,
+      b2: 9000,
+      r1a: 4904,
+      b1: 9400,
+      r1b: 4212,
+      l1: 9116,
+    },
+    baseWidth: 600,
+    entered: true,
+    sidePins,
+  });
+  const twoRingRuns = (strip: StripState) =>
+    faceRuns(buildStrip(scaledStripNodes(strip), strip.segs, () => 600, () => 500));
+  const topOfTwoRings = (strip: StripState) => {
+    const run = twoRingRuns(strip).find(
+      (r) => r.outer && r.axis === 'H' && r.ids.join('+') === 't1+t2',
+    );
+    if (!run) throw new Error('top run not found');
+    return run;
+  };
+  const greenBottom = (strip: StripState) => {
+    const run = twoRingRuns(strip).find(
+      (r) => r.outer && r.axis === 'H' && r.ids.join('+') === 'b1',
+    );
+    if (!run) throw new Error('green bottom not found');
+    return run;
+  };
+  const greenRightBottom = (strip: StripState) => {
+    const run = twoRingRuns(strip).find(
+      (r) => r.outer && r.axis === 'H' && r.ids.join('+') === 'b2',
+    );
+    if (!run) throw new Error('right bottom not found');
+    return run;
+  };
+
+  it('moves only the free piece when the other piece of the run is held by its ring', () => {
+    const base = enteredTwoRing();
+    const top = topOfTwoRings(base);
+    expect(top.len).toBeCloseTo(19000, 3);
+    const strip = enteredTwoRing([greenBottom(base).key]);
+    const before = stripLens(strip);
+    const res = setStripRunLength(strip, topOfTwoRings(strip), 20000);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    const lens = stripLens(res.strip);
+    // The left ring's width is fixed by its green bottom, so its top piece must
+    // stay put. The whole growth goes to the right ring and slides its bottom.
+    expect(lens.t1).toBeCloseTo(before.t1, 6);
+    expect(lens.b1).toBeCloseTo(before.b1, 6);
+    expect(lens.t2).toBeCloseTo(10000, 6);
+    expect(lens.b2).toBeCloseTo(10000, 6);
+    expect(lens.r2).toBeCloseTo(before.r2, 6);
+    expect(lens.r1a).toBeCloseTo(before.r1a, 6);
+    expect(twoRingRuns(res.strip).find((r) => r.key === top.key)?.len).toBeCloseTo(20000, 3);
+    expect(twoRingRuns(res.strip).find((r) => r.key === greenBottom(base).key)?.len).toBeCloseTo(
+      10000,
+      3,
+    );
+  });
+
+  it('splits the change over both rings when the bottom is not held', () => {
+    const base = enteredTwoRing();
+    const strip = enteredTwoRing();
+    const res = setStripRunLength(strip, topOfTwoRings(base), 20000);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    const lens = stripLens(res.strip);
+    // Both rings are free, so the change is split in proportion to the pieces.
+    expect(lens.t1).toBeCloseTo(9400 + (1000 * 9400) / 18400, 6);
+    expect(lens.b1).toBeCloseTo(lens.t1, 3);
+    expect(lens.t2).toBeCloseTo(9000 + (1000 * 9000) / 18400, 6);
+    expect(lens.b2).toBeCloseTo(lens.t2, 3);
+    expect(twoRingRuns(res.strip).find((r) => r.key === topOfTwoRings(base).key)?.len).toBeCloseTo(
+      20000,
+      3,
+    );
+  });
+
+  it('still alerts when both opposite sides of the two-ring run are held', () => {
+    const base = enteredTwoRing();
+    const strip = enteredTwoRing([greenBottom(base).key, greenRightBottom(base).key]);
+    const before = stripLens(strip);
+    const res = setStripRunLength(strip, topOfTwoRings(strip), 20000);
     expect(res.ok).toBe(false);
     if (res.ok) return;
     expect(res.reason).toMatch(/Открепите/);
+    expect(stripLens(strip)).toEqual(before);
   });
 });

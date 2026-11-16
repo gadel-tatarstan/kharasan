@@ -1658,6 +1658,7 @@ export function setStripRunLength(
   mm: number,
 ): StripLengthResult {
   if (!strip.baseNodes) return { ok: false, reason: 'Сначала проведите ось ленты.' };
+  const baseNodes = strip.baseNodes;
   const lens = stripLens(strip);
   const ids = run.ids.filter((id) => id in lens);
   if (!ids.length) return { ok: false, reason: 'Этот участок ещё не нарисован.' };
@@ -1683,28 +1684,63 @@ export function setStripRunLength(
   const locked = lockedStripSegmentsForFace(strip, run.key);
   const movable = ids.filter((id) => !locked.has(id));
   if (!movable.length) return { ok: false, reason: CONFLICT_REASON };
-  const next = { ...lens };
-  const leftover = distributeDelta(next, movable, value - run.len);
-  if (Math.abs(leftover) > 0.5) return { ok: false, reason: RANGE_REASON };
+  const pinned = new Set([...locked, ...ids]);
 
-  const solved = solveStripLens(
-    strip.baseNodes,
-    strip.segs,
-    next,
-    new Set([...locked, ...ids]),
-    ids,
-  );
-  if (!solved.ok) return solved;
+  /** Spreads the typed value over the given pieces and solves the network. */
+  const solveOver = (pieceIds: string[]): StripSolve => {
+    const next = { ...lens };
+    const leftover = distributeDelta(next, pieceIds, value - run.len);
+    if (Math.abs(leftover) > 0.5) return { ok: false, reason: RANGE_REASON };
+    return solveStripLens(baseNodes, strip.segs, next, pinned, ids);
+  };
+
+  /** Whether one piece can change on its own at all, even by a millimetre. */
+  const canMove = (id: string): boolean => {
+    const current = lens[id] ?? STRIP_MIN_LEN;
+    for (const step of [1, -1]) {
+      const target = current + step;
+      if (target < STRIP_MIN_LEN - 1e-6 || target > STRIP_MAX_LEN + 1e-6) continue;
+      const next = { ...lens, [id]: target };
+      if (solveStripLens(baseNodes, strip.segs, next, pinned, ids).ok) return true;
+    }
+    return false;
+  };
+
+  const solved = solveOver(movable);
+  let result: StripSolve = solved;
+  if (!solved.ok) {
+    // A piece can be held by its own ring even without a green mark: if the
+    // opposite side of that ring is green, the piece cannot change at all.
+    // Spreading the change over it makes the solver report a conflict on a ring
+    // that was never free. Leave such pieces alone and retry with the rest, so
+    // the change goes only to the pieces that can actually move.
+    const able = movable.filter(canMove);
+    if (able.length && able.length < movable.length) result = solveOver(able);
+    // If every piece is flexible but the proportional split still failed (a
+    // range limit on one of them), let a single piece carry the whole value
+    // before refusing an edit that is possible.
+    if (!result.ok) {
+      for (const id of movable) {
+        const one = solveOver([id]);
+        if (one.ok) {
+          result = one;
+          break;
+        }
+      }
+    }
+  }
+  if (!result.ok) return result;
+
   const sidePins = stripSidePins(strip);
   sidePins.add(run.key);
   // The edited face itself now holds its position too; other green faces
   // follow their keys, so both walls of a ring stay where a person put them.
-  const anchored = anchorStripNodes(strip, lens, solved.lens, sidePins);
+  const anchored = anchorStripNodes(strip, lens, result.lens, sidePins);
   return {
     ok: true,
     strip: {
       ...strip,
-      lens: solved.lens,
+      lens: result.lens,
       entered: true,
       sidePins: [...sidePins],
       ...(anchored ? { baseNodes: anchored.baseNodes, nodes: anchored.nodes } : {}),
